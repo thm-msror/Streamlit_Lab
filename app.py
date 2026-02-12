@@ -13,35 +13,50 @@ nltk.download('punkt')
 # -------------------------------
 # Step 1: Load precomputed data
 # -------------------------------
-with st.spinner("Loading Reuters dataset..."):
-    embeddings = np.load("embeddings.npy")  # Precomputed embeddings
+with st.spinner("Loading precomputed embeddings and documents..."):
+    embeddings = np.load("embeddings.npy")
+    model = Word2Vec.load("word2vec_reuters.model")
+
+    # Load documents preserving multi-line content
+    documents_with_id = []
     with open("documents_original.txt", "r", encoding="utf-8") as f:
-        documents_original = f.readlines()  # Original readable text
+        raw_text = f.read()
+        raw_docs = raw_text.split("====DOC====\n")
 
-    model = Word2Vec.load("word2vec_reuters.model")  # Trained Word2Vec model
+        for idx, doc in enumerate(raw_docs):
+            doc = doc.strip()
+            if not doc:
+                continue
+            lines = doc.split("\n")
+            title = lines[0] if lines else "No Title"
+            documents_with_id.append((f"Doc_{idx+1}", title, doc))
 
-st.success(f"Loaded {len(documents_original)} documents from Reuters.")
+st.success(f"Loaded {len(documents_with_id)} documents.")
 st.info(f"Vocabulary size: {len(model.wv.index_to_key)}")
 
 # -------------------------------
 # Step 2: Helper functions
 # -------------------------------
 def get_query_embedding(query):
-    tokens = [w.lower() for w in word_tokenize(query) if w.isalnum() and w.lower() in model.wv]
+    tokens = [w.lower() for w in word_tokenize(query) if w.isalnum()]
     vectors = [model.wv[w] for w in tokens if w in model.wv]
+
     if vectors:
         return np.mean(vectors, axis=0)
     else:
         return np.zeros(model.vector_size)
 
 def retrieve_top_k(query_embedding, embeddings, k=10):
-    """
-    Retrieve top-k most similar documents using cosine similarity.
-    Returns (document_text, similarity_score)
-    """
     similarities = cosine_similarity(query_embedding.reshape(1, -1), embeddings)[0]
     top_k_indices = similarities.argsort()[-k:][::-1]
-    return [(documents_original[i], similarities[i]) for i in top_k_indices]
+
+    results = []
+    for i in top_k_indices:
+        score = similarities[i]
+        if score > 0:
+            fid, title, content = documents_with_id[i]
+            results.append((fid, title, content, score))
+    return results
 
 # -------------------------------
 # Step 3: Streamlit UI
@@ -54,8 +69,18 @@ query = st.text_input("Enter your search query:")
 if st.button("Search") and query.strip():
     query_embedding = get_query_embedding(query)
     results = retrieve_top_k(query_embedding, embeddings, k=10)
-    
-    # Display results
-    st.write("### Top 10 Relevant Documents:")
-    for doc, score in results:
-        st.write(f"- **{doc.strip()}** (Score: {score:.4f})")
+
+    num_results = len(results)
+
+    if num_results == 0:
+        st.warning("No relevant documents found for this query.")
+    else:
+        st.success(f"{num_results} document(s) retrieved.")
+        st.write(f"### Showing Top {num_results} Relevant Documents:")
+
+        for fid, title, content, score in results:
+            st.write(f"**FieldID:** {fid}")
+            st.write(f"**Title:** {title}")
+            st.write(f"**Content:** {content[:500]}...")
+            st.write(f"**Score:** {score:.4f}")
+            st.markdown("---")
