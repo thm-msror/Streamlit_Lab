@@ -8,7 +8,8 @@ import nltk
 # -------------------------------
 # Step 0: Download required NLTK data
 # -------------------------------
-nltk.download('punkt')
+nltk.download("punkt")
+nltk.download("punkt_tab")
 
 # -------------------------------
 # Step 1: Load precomputed data
